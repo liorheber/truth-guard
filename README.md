@@ -1,7 +1,7 @@
 # TruthGuard
 Dynamic Fact-Checking and Knowledge Expansion on Historical Data
 
-Participant of [Snowflake Hackatho](https://snowflake-mistral-rag.devpost.com/)
+Participant of [Snowflake Hackathon](https://snowflake-mistral-rag.devpost.com/)
 
 ## High-Level Architecture
 
