@@ -3,6 +3,37 @@ Dynamic Fact-Checking and Knowledge Expansion on Historical Data
 
 Participant of [Snowflake Hackathon](https://snowflake-mistral-rag.devpost.com/)
 
+## Setup
+
+1. Install dependencies:
+```bash
+python3.11 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. Set up your Snowflake credentials in `.env`:
+```
+SNOWFLAKE_ACCOUNT=your_account
+SNOWFLAKE_USER=your_user
+SNOWFLAKE_PASSWORD=your_password
+SNOWFLAKE_ROLE=your_role
+SNOWFLAKE_WAREHOUSE=your_warehouse
+```
+
+3. Run the initial document ingestion:
+```bash
+TBD
+```
+
+4. Start the Streamlit app:
+```bash
+streamlit run app.py
+```
+
+
+
+
 ## High-Level Architecture
 
 1. **Snowflake Setup**:
