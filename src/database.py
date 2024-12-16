@@ -1,17 +1,32 @@
+from snowflake.core import Root
 from snowflake.snowpark import Session
 from src.config import SNOWFLAKE_CONFIG
+
+
+DATABASE = "HISTORICAL_FACTS_DB"
+SCHEMA = "PUBLIC"
+CORTEX_SEARCH_SERVICE = "CHECK_HISTORICAL_FACTS"
+
+
+def get_cortex_search_services(session):
+    """Get cortex search function."""
+    root = Root(session)
+    return root.databases[DATABASE].schemas[SCHEMA].cortex_search_services[
+        CORTEX_SEARCH_SERVICE]
+
 
 def create_snowflake_session():
     """Create and return a Snowflake session."""
     return Session.builder.configs(SNOWFLAKE_CONFIG).create()
 
+
 def init_database(session):
     """Initialize the database, schema, and required tables."""
     # Create database and schema
-    session.sql("CREATE DATABASE IF NOT EXISTS HISTORICAL_FACTS_DB").collect()
-    session.sql("USE DATABASE HISTORICAL_FACTS_DB").collect()
-    session.sql("CREATE SCHEMA IF NOT EXISTS PUBLIC").collect()
-    session.sql("USE SCHEMA PUBLIC").collect()
+    session.sql(f"CREATE DATABASE IF NOT EXISTS {DATABASE}").collect()
+    session.sql(f"USE DATABASE {DATABASE}").collect()
+    session.sql(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}").collect()
+    session.sql(f"USE SCHEMA {SCHEMA}").collect()
 
     # Create document stage if it doesn't exist
     session.sql("""
