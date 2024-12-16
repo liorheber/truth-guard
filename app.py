@@ -1,11 +1,7 @@
-import json
-import random
-
 import streamlit as st
 
 from src.chat import chat
 from src.database import create_snowflake_session, init_database, verify_cortex_access, get_cortex_search_services
-from snowflake.core import Root
 
 from src.verify_doc import verify_doc
 

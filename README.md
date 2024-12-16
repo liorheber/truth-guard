@@ -23,7 +23,7 @@ Participant of [Snowflake Hackathon](https://snowflake-mistral-rag.devpost.com/)
 
 3. Run the initial document ingestion:
     ```bash
-    python ./initial_document_ingestion.py
+    python initial_file_ingestion.py
     ```
 
 4. Start the Streamlit app:
@@ -72,7 +72,7 @@ Participant of [Snowflake Hackathon](https://snowflake-mistral-rag.devpost.com/)
 #### Create virtual environment:
 1. Create environment: 
     ```shell
-    pyenv virtualenv 3.9 venv-truth-guard
+    pyenv virtualenv 3.11 venv-truth-guard
     ```
 2. Enable it:
     ```shell

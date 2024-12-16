@@ -3,3 +3,5 @@ streamlit>=1.41.0
 snowflake-connector-python>=3.12.4
 pandas>=2.2.3
 python-dotenv>=1.0.1
+snowflake.core
+PyPDF2
