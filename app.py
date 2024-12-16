@@ -1,16 +1,20 @@
 import streamlit as st
-from src.database import create_snowflake_session, init_database, verify_cortex_access
+
+from src.chat import chat
+from src.database import create_snowflake_session, init_database, verify_cortex_access, get_cortex_search_services
+
+from src.verify_doc import verify_doc
 
 
 # Initialize Snowflake connection
 @st.cache_resource
 def init_snowflake():
-    session = create_snowflake_session()
-    if not verify_cortex_access(session):
+    se = create_snowflake_session()
+    if not verify_cortex_access(se):
         st.error("Error: Unable to access required Cortex functions")
         st.stop()
-    init_database(session)
-    return session
+    init_database(se)
+    return se
 
 
 # Page config
@@ -22,6 +26,8 @@ st.set_page_config(
 
 # Initialize session
 session = init_snowflake()
+svc = get_cortex_search_services(session)
+
 
 # Sidebar
 with st.sidebar:
@@ -30,7 +36,7 @@ with st.sidebar:
     This system helps verify documents against a trusted corpus and provides
     a Q&A interface for historical fact-checking.
     """)
-    
+
     page = st.radio("Choose a task:", [
         "📄 Add & Verify Document",
         "❓ Ask a Question"
@@ -38,33 +44,7 @@ with st.sidebar:
 
 # Main content
 if page == "📄 Add & Verify Document":
-    st.header("Upload and Fact Check a Document")
-    st.markdown("""
-    Upload a PDF document to verify its claims against our trusted corpus.
-    Documents that pass verification will be added to the corpus.
-    """)
-
-    uploaded_file = st.file_uploader(
-        "Upload a PDF to fact-check:",
-        type=["pdf"],
-        help="The document will be analyzed for factual claims and verified against our trusted corpus."
-    )
+    verify_doc(st)
 
 else:  # Ask a Question
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "assistant", "content": "How may I help you?"}
-        ]
-    
-    # Display messages
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # Input at the bottom
-    prompt = st.chat_input("Your message")
-    if prompt:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        response = f"Echo: {prompt}"
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        st.rerun()
+    chat(st, session, svc)
