@@ -6,31 +6,30 @@ Participant of [Snowflake Hackathon](https://snowflake-mistral-rag.devpost.com/)
 ## Setup
 
 1. Install dependencies:
-```bash
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+    ```bash
+    python3.11 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    ```
 
 2. Set up your Snowflake credentials in `.env`:
-```
-SNOWFLAKE_ACCOUNT=your_account
-SNOWFLAKE_USER=your_user
-SNOWFLAKE_PASSWORD=your_password
-SNOWFLAKE_ROLE=your_role
-SNOWFLAKE_WAREHOUSE=your_warehouse
-```
+    ```
+    SNOWFLAKE_ACCOUNT=your_account
+    SNOWFLAKE_USER=your_user
+    SNOWFLAKE_PASSWORD=your_password
+    SNOWFLAKE_ROLE=your_role
+    SNOWFLAKE_WAREHOUSE=your_warehouse
+    ```
 
 3. Run the initial document ingestion:
-```bash
-TBD
-```
+    ```bash
+    python ./initial_document_ingestion.py
+    ```
 
 4. Start the Streamlit app:
-```bash
-streamlit run app.py
-```
-
+    ```bash
+    streamlit run app.py
+    ```
 
 
 
@@ -67,3 +66,19 @@ streamlit run app.py
 6. **Section-Based Chunking & Claim Verification**:
    - Smart chunking based on section headers or fallback token limits.
    - Claim extraction and verification ensure only truthful documents enter the corpus.
+
+
+## Local setup
+#### Create virtual environment:
+1. Create environment: 
+    ```shell
+    pyenv virtualenv 3.9 venv-truth-guard
+    ```
+2. Enable it:
+    ```shell
+    pyenv activate venv-truth-guard 
+    ```
+3. Install packages:
+    ```shell
+    pip install -r requirements.txt
+    ```
