@@ -9,12 +9,12 @@ from src.verify_doc import verify_doc
 # Initialize Snowflake connection
 @st.cache_resource
 def init_snowflake():
-    session = create_snowflake_session()
-    if not verify_cortex_access(session):
+    se = create_snowflake_session()
+    if not verify_cortex_access(se):
         st.error("Error: Unable to access required Cortex functions")
         st.stop()
-    init_database(session)
-    return session
+    init_database(se)
+    return se
 
 
 # Page config

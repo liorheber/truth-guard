@@ -55,7 +55,7 @@ Participant of [Snowflake Hackathon](https://snowflake-mistral-rag.devpost.com/)
      - This allows the user to test the misinformation detection workflow in real-time.
 
 4. **Q&A (Streamlit)**:
-   - A “Ask a Question” tab to input queries.
+   - An “Ask a Question” tab to input queries.
    - Retrieves top relevant chunks and uses `COMPLETE` to provide a factual, sourced answer.
 
 5. **Cortex Functions**:
