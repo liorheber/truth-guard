@@ -28,7 +28,7 @@ Participant of [Snowflake Hackathon](https://snowflake-mistral-rag.devpost.com/)
 
 4. Start the Streamlit app:
     ```bash
-    streamlit run app.py
+    streamlit run app.py --server.headless true
     ```
 
 
