@@ -8,6 +8,7 @@ COLUMNS = [
     "relative_path",
 ]
 
+
 def chat(st, session, svc):
     if "messages" not in st.session_state:
         st.session_state.messages = [
@@ -22,6 +23,19 @@ def chat(st, session, svc):
     # Input at the bottom
     prompt = st.chat_input("Your message")
     if prompt:
+        if st.session_state.messages[-1]["role"] == "assistant":
+            rephrase_prompt = (f"Given the following chat history, "
+                               f"rephrase the last question to contain all the necessary information needed to answer it. "
+                               f"Don't include unnecessary information. Phrase as a new question. "
+                               f"chat_history: {st.session_state.messages}"
+                               f"question: {prompt}")
+            cmd = """
+                   select snowflake.cortex.complete(?, ?) as response
+                """
+            df_response = session.sql(cmd, params=['mistral-large', rephrase_prompt]).collect()
+            rephrased_question = df_response[0].RESPONSE
+        else:
+            rephrased_question = prompt
         st.session_state.messages.append({"role": "user", "content": prompt})
         query_context = svc.search(prompt, COLUMNS, limit=NUM_CHUNKS)
 
@@ -35,11 +49,11 @@ def chat(st, session, svc):
 
            Do not mention the CONTEXT used in your answer.
 
-           <context>          
+            <context>          
            {query_context}
            </context>
            <question>  
-           {prompt}
+           {rephrased_question}
            </question>
            Answer: 
            """
