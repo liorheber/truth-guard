@@ -1,7 +1,7 @@
 import os
 
 from PyPDF2 import PdfReader, PdfWriter
-from src.database import create_snowflake_session, init_database, VERIFIED_DOCUMENT_STAGE
+from src.database import *
 
 session = create_snowflake_session()
 init_database(session)
@@ -47,16 +47,6 @@ for file_name in os.listdir(documents_dir_path):
         pages = (pages[0] + chunk_page_size, pages[1] + chunk_page_size)
 
 
-session.sql(f"""
-insert into docs_chunks_table (relative_path, size, file_url, scoped_file_url, chunk)
-    select 
-        relative_path, 
-        size,
-        file_url, 
-        build_scoped_file_url(@{VERIFIED_DOCUMENT_STAGE}, relative_path) as scoped_file_url,
-        func.chunk as chunk
-    from 
-        directory(@DOCUMENT_STAGE),
-        TABLE(text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@DOCUMENT_STAGE, 
-                              relative_path, {'mode': 'LAYOUT'})))) as func;
-""").collect()
+session.sql(
+    f"insert into {VERIFIED_DOCS_CHUNKS} (relative_path, size, file_url, scoped_file_url, chunk) select relative_path, size, file_url, build_scoped_file_url(@{VERIFIED_DOCUMENT_STAGE}, relative_path) as scoped_file_url, func.chunk as chunk from directory(@{VERIFIED_DOCUMENT_STAGE}), TABLE(text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@{VERIFIED_DOCUMENT_STAGE}, relative_path, " + "{'mode': 'LAYOUT'})))) as func;"
+).collect()
