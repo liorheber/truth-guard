@@ -44,7 +44,7 @@ with st.sidebar:
 
 # Main content
 if page == "📄 Add & Verify Document":
-    verify_doc(st)
+    verify_doc(st, session)
 
 else:  # Ask a Question
     chat(st, session, svc)
