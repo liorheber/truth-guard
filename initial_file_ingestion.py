@@ -49,26 +49,27 @@ def upload_file_to_stage(session, file: str, stage: str):
 
 
 def chunks_into_table(session, stage: str, table:str):
-    session.sql(
-        f"insert into {table} "
-        f"(relative_path, size, file_url, scoped_file_url, chunk) "
-        f"select relative_path, size, file_url, "
-        f"build_scoped_file_url(@{stage}, relative_path) as scoped_file_url, "
-        f"func.chunk as chunk from directory(@{stage}), "
-        f"TABLE(text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@{stage}, "
-        f"relative_path, " +
-        "{'mode': 'LAYOUT'})))) as func;"
-    ).collect()
+    chunking_sql = (f"insert into {table}"
+                    f" (relative_path, size, file_url, scoped_file_url, chunk) "
+                    f"select relative_path, size, file_url, "
+                    f"build_scoped_file_url(@{stage}, relative_path) as scoped_file_url,  "
+                    f"func.chunk as chunk "
+                    f"from directory(@{stage}),  "
+                    f"TABLE("
+                    f"text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@{stage},  "
+                    f"relative_path, ") + "{'mode': 'LAYOUT'})))) as func;"
+    print(chunking_sql)
+    session.sql(chunking_sql).collect()
 
 
 if __name__ == "__main__":
     cur_session = init_connection_and_db()
-    if not os.path.exists(split_files_dir_path):
-        os.makedirs(split_files_dir_path)
-
-    for file_name in os.listdir(documents_dir_path):
-        print(f"starting to process {file_name}")
-        file_path = os.path.join(documents_dir_path, file_name)
-        upload_file_to_stage(cur_session, file_path, VERIFIED_DOCUMENT_STAGE)
+    # if not os.path.exists(split_files_dir_path):
+    #     os.makedirs(split_files_dir_path)
+    #
+    # for file_name in os.listdir(documents_dir_path):
+    #     print(f"starting to process {file_name}")
+    #     file_path = os.path.join(documents_dir_path, file_name)
+    #     upload_file_to_stage(cur_session, file_path, VERIFIED_DOCUMENT_STAGE)
 
     chunks_into_table(cur_session, VERIFIED_DOCUMENT_STAGE, VERIFIED_DOCS_CHUNKS)
