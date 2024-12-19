@@ -1,5 +1,18 @@
-from initial_file_ingestion import upload_file_to_stage, write_file_to_stage, chunks_into_table
+from initial_file_ingestion import upload_file_to_stage, write_file_to_stage
 from src.database import UNVERIFIED_DOCUMENT_STAGE, UNVERIFIED_DOCS_CHUNKS
+
+
+def chunks_into_table(session, stage: str, table:str):
+    session.sql(
+        f"insert into {table} "
+        f"(relative_path, size, file_url, scoped_file_url, chunk) "
+        f"select relative_path, size, file_url, "
+        f"build_scoped_file_url(@{stage}, relative_path) as scoped_file_url, "
+        f"func.chunk as chunk from directory(@{stage}), "
+        f"TABLE(text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@{stage}, "
+        f"relative_path, " +
+        "{'mode': 'LAYOUT'})))) as func;"
+    ).collect()
 
 
 def create_statements(session):
@@ -7,7 +20,7 @@ def create_statements(session):
            "SELECT "
            "DISTINCT chunk "
            "FROM "
-           f"{UNVERIFIED_DOCS_CHUNKS}), "
+           f"@{UNVERIFIED_DOCS_CHUNKS}), "
            "chunks_statements AS ("
            "SELECT relative_path, "
            "TRIM(snowflake.cortex.COMPLETE (   "
@@ -25,9 +38,9 @@ def create_statements(session):
 
 def verify_document(uploaded_file, session):
     # 1. upload to unverified stage
-    upload_file_to_stage(uploaded_file, UNVERIFIED_DOCUMENT_STAGE)
+    upload_file_to_stage(session, uploaded_file, UNVERIFIED_DOCUMENT_STAGE)
     # 2. chunk the document into an unverified table
-    chunks_into_table(UNVERIFIED_DOCUMENT_STAGE)
+    chunks_into_table(session, UNVERIFIED_DOCUMENT_STAGE)
     # 3. use cortex functions to create statements from each chunk
     create_statements(session)
     # 4. compare statements to verified corpus
