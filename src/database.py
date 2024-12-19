@@ -105,6 +105,17 @@ $$;
     );
     """).collect()
 
+    session.sql(f"""
+    CREATE TABLE IF NOT EXISTS {UNVERIFIED_DOCS_CHUNKS} (
+        RELATIVE_PATH VARCHAR(16777216),
+        SIZE NUMBER(38,0),
+        FILE_URL VARCHAR(16777216),
+        SCOPED_FILE_URL VARCHAR(16777216),
+        CHUNK VARCHAR(16777216),
+        STATEMENTS VARCHAR(16777216)
+    );
+        """).collect()
+
 
 def verify_cortex_access(session):
     """Verify access to required Cortex functions."""
