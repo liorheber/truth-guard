@@ -2,7 +2,6 @@ import os
 
 from PyPDF2 import PdfReader, PdfWriter
 from src.database import *
-from src.verify_doc import chunks_into_table
 
 chunk_page_size = 200
 documents_dir_path = os.path.join(os.path.dirname(__file__), "documents")
@@ -37,7 +36,7 @@ def chunk_and_upload_file(session, file: str, stage: str, chunk_size: int):
     pages_in_file = len(reader.pages)
     split_file_path = os.path.join(split_files_dir_path, os.path.basename(file)).replace(" ", "_")
     while pages[0] < pages_in_file:
-        split_file_name = f'{split_file_path.replace("pdf", "")}_page_{pages[0]}-{pages[1]}.pdf'
+        split_file_name = f'{split_file_path.replace(".pdf", "")}_page_{pages[0]}-{pages[1]}.pdf'
         page_range = range(pages[0], pages[1])
         write_page_range_to_stage(session, reader, split_file_name, stage, page_range)
         pages = (pages[1], pages[1] + chunk_size)
@@ -47,6 +46,19 @@ def upload_file_to_stage(session, file: str, stage: str):
     print(f"start processing {file}")
     chunk_and_upload_file(session, file, stage, chunk_page_size)
     print(f"{file} processed")
+
+
+def chunks_into_table(session, stage: str, table:str):
+    session.sql(
+        f"insert into {table} "
+        f"(relative_path, size, file_url, scoped_file_url, chunk) "
+        f"select relative_path, size, file_url, "
+        f"build_scoped_file_url(@{stage}, relative_path) as scoped_file_url, "
+        f"func.chunk as chunk from directory(@{stage}), "
+        f"TABLE(text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@{stage}, "
+        f"relative_path, " +
+        "{'mode': 'LAYOUT'})))) as func;"
+    ).collect()
 
 
 if __name__ == "__main__":

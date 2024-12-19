@@ -1,18 +1,6 @@
-from initial_file_ingestion import upload_file_to_stage, write_file_to_stage
+from initial_file_ingestion import upload_file_to_stage, write_file_to_stage, chunks_into_table
 from src.database import UNVERIFIED_DOCUMENT_STAGE, UNVERIFIED_DOCS_CHUNKS
 
-
-def chunks_into_table(session, stage: str, table:str):
-    session.sql(
-        f"insert into {table} "
-        f"(relative_path, size, file_url, scoped_file_url, chunk) "
-        f"select relative_path, size, file_url, "
-        f"build_scoped_file_url(@{stage}, relative_path) as scoped_file_url, "
-        f"func.chunk as chunk from directory(@{stage}), "
-        f"TABLE(text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@{stage}, "
-        f"relative_path, " +
-        "{'mode': 'LAYOUT'})))) as func;"
-    ).collect()
 
 
 def create_statements(session):
