@@ -2,7 +2,8 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+env_path = os.path.join(os.getcwd(), '.env')
+load_dotenv(dotenv_path=env_path, override=True)
 
 SNOWFLAKE_CONFIG = {
     "account": os.getenv("SNOWFLAKE_ACCOUNT"),
