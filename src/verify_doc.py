@@ -1,6 +1,5 @@
 from initial_file_ingestion import upload_file_to_stage, write_file_to_stage, chunks_into_table
-from src.database import UNVERIFIED_DOCUMENT_STAGE, UNVERIFIED_DOCS_CHUNKS
-
+from src.database import *
 
 
 def create_statements(session):
@@ -21,6 +20,15 @@ def create_statements(session):
            f"where  {UNVERIFIED_DOCS_CHUNKS}.relative_path = chunks_statements.relative_path;")
     session.sql(update_table_sql).collect()
 
+def create_chunk_score(session):
+    # for each row in the unverified chunk table:
+    # 1. get the statements
+    # 2. for each statement, get the supporting evidence from the verified corpus using the search service
+    # 3. calculate the score for each statement
+    # 4. calculate the overall score for the chunk by doing an average of the scores of the statements
+    # 5. update the chunk table with the score
+    return
+
 def verify_document(uploaded_file, session):
     # 1. upload to unverified stage
     upload_file_to_stage(session, uploaded_file, UNVERIFIED_DOCUMENT_STAGE)
@@ -29,7 +37,28 @@ def verify_document(uploaded_file, session):
     # 3. use cortex functions to create statements from each chunk
     create_statements(session)
     # 4. compare statements to verified corpus
+    # go over all statements, and ask the RAG to find supporting evidence from the facts, and give a score to each statement
+    create_chunk_score(session)
     # 5. make a decision: if there are contradictions, reject the document, if not, accept it?
+    verified = session.sql(f"SELECT * FROM {UNVERIFIED_DOCS_CHUNKS} WHERE score > 0.8").collect()
+    overall_chunk_length = session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
+    print(f"{verified} out of {overall_chunk_length} chunks have score > 0.8")
+    accepted = False
+    if len(verified) > overall_chunk_length*0.8:
+        accepted = True
+        print("Document accepted")
+    else:
+        print("Document rejected")
+    # 6. if accepted, move to verified corpus, chunk and add to verified corpus, then delete from unverified corpus
+    if accepted:
+        write_file_to_stage(session, uploaded_file, VERIFIED_DOCUMENT_STAGE)
+        chunks_into_table(session, VERIFIED_DOCUMENT_STAGE, VERIFIED_DOCS_CHUNKS)
+        session.sql(f"DELETE FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
+        session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}/{uploaded_file}").collect()
+    # 7. if rejected, delete from unverified corpus
+    else:
+        session.sql(f"DELETE FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
+        session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}/{uploaded_file}").collect()
 
 
 def verify_doc(st, session):
