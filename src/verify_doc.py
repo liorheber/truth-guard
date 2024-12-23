@@ -17,7 +17,10 @@ class VerifyDoc:
                                  "WITH unique_statement AS "
                                  f"(SELECT DISTINCT relative_path, chunk FROM {UNVERIFIED_DOCS_CHUNKS}), "
                                  "chunks_statements AS (SELECT relative_path, "
-                                 "TRIM(snowflake.cortex.COMPLETE ('llama3-70b', 'Create a json formatted list of statements documented in this text: ' || chunk), "
+                                 "TRIM(snowflake.cortex.COMPLETE ('llama3-70b', "
+                                 "'Return a json formatted list of statements documented in the text. "
+                                 "Return only the list with no additional information."
+                                 " <text>' || chunk || '</text>'), "
                                  "'\n') AS statements "
                                  "FROM unique_statement) "
                                  "SELECT * FROM chunks_statements;"
@@ -44,11 +47,21 @@ class VerifyDoc:
         verified = df_response[0].RESPONSE
         return verified
 
+    def cleanup_statements(self, text):
+        start_pos = text.find("[")
+        end_pos = text.find("]")
+        if not start_pos or not end_pos:
+            return '[]'
+        return text[start_pos :end_pos]
+
     def create_chunk_score(self):
         # for each row in the unverified chunk table:
         # 1. create table with statements from the statements list
         statements_df = self.session.table(UNVERIFIED_DOCS_CHUNKS)
-        flattened_df = statements_df.with_column("statement", snowpark.functions.flatten(col(["statements"]))).drop("statements")
+        cleanup_udf = udf(self.cleanup_statements, name="cleanup_statements", session=self.session) #TODO: this doesn't work yet
+        statements_df = statements_df.with_column("statements", cleanup_udf(col("statements")))
+        flattened_df = statements_df.with_column("statement", snowpark.functions.flatten(col(["statements"]))).drop(
+            "statements")
         flattened_df.show()
 
         # 2. for each statement, get the supporting evidence from the verified corpus using the search service
