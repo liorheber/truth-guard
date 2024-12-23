@@ -1,5 +1,7 @@
 import json
 
+from src.database import VERIFIED_DOCUMENT_STAGE
+
 NUM_CHUNKS = 3  # Num-chunks provided as context. Play with this to check how it affects your accuracy
 
 # columns to query in the service
@@ -23,21 +25,28 @@ def chat(st, session, svc):
     # Input at the bottom
     prompt = st.chat_input("Your message")
     if prompt:
-        if st.session_state.messages[-1]["role"] == "assistant":
-            rephrase_prompt = (f"Given the following chat history, "
+        print(f"Got prompt: {prompt}")
+        if len(st.session_state.messages) > 1:
+            print(f"This is a continuation of the previous conversation, asking LLM to rephrase the question")
+            rephrase_prompt = (f"This is a chat history: "
+                               f"<chat> {' '.join([msg['content'] for msg in st.session_state.messages])} </chat> "
+                               f"Use this history to rephrase the following question. "
                                f"rephrase the last question to contain all the necessary information needed to answer it. "
                                f"Don't include unnecessary information. Phrase as a new question. "
-                               f"chat_history: {st.session_state.messages}"
-                               f"question: {prompt}")
+                               f"<question> {prompt} </question>")
+            print(f"Rephrasing prompt: {rephrase_prompt}")
             cmd = """
                    select snowflake.cortex.complete(?, ?) as response
                 """
             df_response = session.sql(cmd, params=['mistral-large', rephrase_prompt]).collect()
             rephrased_question = df_response[0].RESPONSE
+            print(f"Rephrased question: {rephrased_question}")
         else:
             rephrased_question = prompt
         st.session_state.messages.append({"role": "user", "content": prompt})
+        print("Querying cortex for context")
         query_context = svc.search(prompt, COLUMNS, limit=NUM_CHUNKS)
+        print(f"Got context: {query_context}")
 
         prompt = f"""
            You are an expert chat assistance that extracts information from the CONTEXT provided
@@ -60,6 +69,7 @@ def chat(st, session, svc):
 
         json_data = json.loads(query_context.model_dump_json())
         relative_paths = set(item['relative_path'] for item in json_data['results'])
+        print(f"Going to ask LLM the question. Relative paths: {relative_paths}")
         cmd = """
            select snowflake.cortex.complete(?, ?) as response
         """
@@ -68,8 +78,9 @@ def chat(st, session, svc):
 
         if relative_paths != "None":
             st.sidebar.title("Related Documents")
+            print(f"Relative paths: {relative_paths}")
             for path in relative_paths:
-                cmd2 = f"select GET_PRESIGNED_URL(@DOCUMENT_STAGE, '{path}', 360) as URL_LINK from directory(@DOCUMENT_STAGE)"
+                cmd2 = f"select GET_PRESIGNED_URL(@{VERIFIED_DOCUMENT_STAGE}, '{path}', 360) as URL_LINK from directory(@{VERIFIED_DOCUMENT_STAGE})"
                 df_url_link = session.sql(cmd2).to_pandas()
                 url_link = df_url_link._get_value(0, 'URL_LINK')
 
@@ -77,6 +88,7 @@ def chat(st, session, svc):
                 st.sidebar.markdown(display_url)
 
         rs_text = df_response[0].RESPONSE
+        print(f"Got response: {rs_text}")
         st.session_state.messages.append({"role": "assistant", "content": rs_text})
         st.markdown(rs_text)
         st.rerun()
