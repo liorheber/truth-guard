@@ -60,16 +60,17 @@ def chunks_into_table(session, stage: str, table:str):
                     f"relative_path, ") + "{'mode': 'LAYOUT'})))) as func;"
     print(chunking_sql)
     session.sql(chunking_sql).collect()
+    print("chunks inserted")
 
 
 if __name__ == "__main__":
     cur_session = init_connection_and_db()
-    # if not os.path.exists(split_files_dir_path):
-    #     os.makedirs(split_files_dir_path)
-    #
-    # for file_name in os.listdir(documents_dir_path):
-    #     print(f"starting to process {file_name}")
-    #     file_path = os.path.join(documents_dir_path, file_name)
-    #     upload_file_to_stage(cur_session, file_path, VERIFIED_DOCUMENT_STAGE)
+    if not os.path.exists(split_files_dir_path):
+        os.makedirs(split_files_dir_path)
+
+    for file_name in os.listdir(documents_dir_path):
+        print(f"starting to process {file_name}")
+        file_path = os.path.join(documents_dir_path, file_name)
+        upload_file_to_stage(cur_session, file_path, VERIFIED_DOCUMENT_STAGE)
 
     chunks_into_table(cur_session, VERIFIED_DOCUMENT_STAGE, VERIFIED_DOCS_CHUNKS)

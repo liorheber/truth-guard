@@ -3,11 +3,11 @@ from src.database import *
 
 
 def create_statements(session):
-    create_statements_sql = ("CREATE OR REPLACE TEMPORARY TABLE chunks_statements AS WITH unique_statement AS "
-                             f"(SELECT DISTINCT chunk FROM {UNVERIFIED_DOCS_CHUNKS}), "
+    create_statements_sql = ("CREATE OR REPLACE TEMPORARY TABLE chunks_statements AS "
+                             "WITH unique_statement AS "
+                             f"(SELECT DISTINCT relative_path, chunk FROM {UNVERIFIED_DOCS_CHUNKS}), "
             "chunks_statements AS (SELECT relative_path, "
-           "TRIM(snowflake.cortex.COMPLETE ('llama3-70b', "
-           "'Create a list of statements documented in this text: ' || chunk || ), "
+           "TRIM(snowflake.cortex.COMPLETE ('llama3-70b', 'Create a list of statements documented in this text: ' || chunk), "
                              "'\n') AS statements "
            "FROM unique_statement) "
            "SELECT * FROM chunks_statements;"
@@ -27,6 +27,7 @@ def create_chunk_score(session):
     # 3. calculate the score for each statement
     # 4. calculate the overall score for the chunk by doing an average of the scores of the statements
     # 5. update the chunk table with the score
+    print("TODO: implement create_chunk_score")
     return
 
 def verify_document(uploaded_file, session):
