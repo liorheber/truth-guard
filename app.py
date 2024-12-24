@@ -1,9 +1,8 @@
 import streamlit as st
 
-from src.chat import chat
+from src.chat import Chat
 from src.database import create_snowflake_session, init_database, verify_cortex_access, get_cortex_search_services
-
-from src.verify_doc import verify_doc
+from src.verify_doc import VerifyDoc
 
 
 # Initialize Snowflake connection
@@ -44,7 +43,7 @@ with st.sidebar:
 
 # Main content
 if page == "📄 Add & Verify Document":
-    verify_doc(st)
+    VerifyDoc(st, session, svc).verify_doc()
 
 else:  # Ask a Question
-    chat(st, session, svc)
+    Chat(st, session, svc).chat()

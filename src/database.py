@@ -9,6 +9,7 @@ VERIFIED_DOCS_CHUNKS = "VERIFIED_DOCS_CHUNKS"
 VERIFIED_DOCS_SEARCH_SERVICE = "VERIFIED_DOCS_SEARCH_SERVICE"
 VERIFIED_DOCUMENT_STAGE = "VERIFIED_DOCUMENT_STAGE"
 UNVERIFIED_DOCUMENT_STAGE = "UNVERIFIED_DOCUMENT_STAGE"
+UNVERIFIED_DOCS_CHUNKS = "UNVERIFIED_DOCS_CHUNKS"
 
 
 def get_cortex_search_services(session):
@@ -46,29 +47,19 @@ def init_database(session):
         ENCRYPTION=(TYPE='SNOWFLAKE_SSE')
     """).collect()
 
-    # Create main corpus table
-    session.sql("""
-    CREATE TABLE IF NOT EXISTS HOLOCAUST_CORPUS (
-        ID VARCHAR,
-        SOURCE_NAME VARCHAR,
-        TEXT VARCHAR,
-        CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-    )
-    """).collect()
-
     # Create verified chunks table
     session.sql(f"""
     CREATE TABLE IF NOT EXISTS {VERIFIED_DOCS_CHUNKS} ( 
-        RELATIVE_PATH VARCHAR(16777216),
+        RELATIVE_PATH VARCHAR(1000),
         SIZE NUMBER(38,0),
-        FILE_URL VARCHAR(16777216),
-        SCOPED_FILE_URL VARCHAR(16777216),
-        CHUNK VARCHAR(16777216),
-        CATEGORY VARCHAR(16777216)
+        FILE_URL VARCHAR(1000),
+        SCOPED_FILE_URL VARCHAR(1000),
+        CHUNK VARCHAR(16777216)
     );
     """).collect()
 
-    # Create cortex search for verified chunks table
+# TODO: maybe we have to think about the check sizes and the overlap, and maybe define another chunker for the unverified documents
+    # Create text chunker for verified documents
     session.sql(f"""
     create or replace function text_chunker(pdf_text string)
 returns table (chunk varchar)
@@ -113,18 +104,18 @@ $$;
     );
     """).collect()
 
-    # Create embeddings table (recreate to ensure latest schema)
-    session.sql("DROP TABLE IF EXISTS HOLOCAUST_CORPUS_EMBEDDINGS").collect()
-    session.sql("""
-    CREATE TABLE HOLOCAUST_CORPUS_EMBEDDINGS (
-        ID VARCHAR,
-        SOURCE_NAME VARCHAR,
-        TEXT VARCHAR,
-        EMBEDDING VARIANT,
-        ORIGINAL_ID VARCHAR,
-        CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-    )
-    """).collect()
+    session.sql(f"""
+    CREATE TABLE IF NOT EXISTS {UNVERIFIED_DOCS_CHUNKS} (
+        ID NUMBER(38,0) AUTOINCREMENT,
+        RELATIVE_PATH VARCHAR(1000),
+        SIZE NUMBER(38,0),
+        FILE_URL VARCHAR(1000),
+        SCOPED_FILE_URL VARCHAR(1000),
+        CHUNK VARCHAR(16777216),
+        STATEMENTS VARCHAR(16777216)
+    );
+        """).collect()
+
 
 def verify_cortex_access(session):
     """Verify access to required Cortex functions."""
@@ -147,3 +138,4 @@ def verify_cortex_access(session):
     except Exception as e:
         print(f"Error verifying Cortex access: {str(e)}")
         return False
+
