@@ -104,11 +104,12 @@ class VerifyDoc:
         Documents that pass verification will be added to the corpus.
         """)
 
-        # cleanup unverified stage and table
-        self.session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}").collect()
-        self.session.sql(f"CREATE STAGE IF NOT EXISTS {UNVERIFIED_DOCUMENT_STAGE} FILE_FORMAT = (TYPE='CSV') DIRECTORY = (ENABLE=TRUE) ENCRYPTION=(TYPE='SNOWFLAKE_SSE')")
-        self.session.sql(f"DROP TABLE IF EXISTS {UNVERIFIED_DOCS_CHUNKS}").collect()
-        self.session.sql(f"CREATE TABLE {UNVERIFIED_DOCS_CHUNKS} (id int autoincrement, relative_path string, size int, file_url string, scoped_file_url string, chunk string, statements string, score float)").collect()
+        # cleanup unverified stage and table - TODO: work only on our file and not delete everything
+        docs = self.session.sql(f"list @{UNVERIFIED_DOCUMENT_STAGE}").collect()
+        for doc in docs:
+            print(f"Removing {doc.name}")
+            self.session.sql(f"remove @{doc.name}").collect()
+        self.session.sql(f"delete from {UNVERIFIED_DOCS_CHUNKS}").collect()
 
         uploaded_file = self.st.file_uploader(
             "Upload a PDF to fact-check:",
