@@ -28,6 +28,7 @@ def write_page_range_to_stage(session, reader: PdfReader, split_file_name: str, 
     with open(split_file_name, 'wb') as out:
         writer.write(out)
     write_file_to_stage(session, split_file_name, stage)
+    os.remove(split_file_name)
 
 
 def chunk_and_upload_file(session, file: str, stage: str, chunk_size: int):

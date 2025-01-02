@@ -1,5 +1,4 @@
-from snowflake import snowpark
-from snowflake.snowpark.functions import udf, col
+import os
 
 from initial_file_ingestion import upload_file_to_stage, write_file_to_stage, chunks_into_table
 from src.chat import NUM_CHUNKS, COLUMNS
@@ -11,12 +10,13 @@ class VerifyDoc:
         self.st = streamlit
         self.session = session
         self.svc = svc
+        os.makedirs("tmp/split_files", exist_ok=True)
 
     def create_statements(self):
         create_statements_sql = ("CREATE OR REPLACE TEMPORARY TABLE chunks_statements AS "
                                  "WITH unique_statement AS "
-                                 f"(SELECT DISTINCT relative_path, chunk FROM {UNVERIFIED_DOCS_CHUNKS}), "
-                                 "chunks_statements AS (SELECT relative_path, "
+                                 f"(SELECT DISTINCT id, relative_path, chunk FROM {UNVERIFIED_DOCS_CHUNKS}), "
+                                 "chunks_statements AS (SELECT id, relative_path, "
                                  "TRIM(snowflake.cortex.COMPLETE ('llama3-70b', "
                                  "'Return a json formatted list of statements documented in the text. "
                                  "Return only the list with no additional information."
@@ -30,7 +30,8 @@ class VerifyDoc:
         update_table_sql = (f"update {UNVERIFIED_DOCS_CHUNKS}  "
                             f"SET statements = chunks_statements.statements "
                             f"from chunks_statements "
-                            f"where  {UNVERIFIED_DOCS_CHUNKS}.relative_path = chunks_statements.relative_path;")
+                            f"where  {UNVERIFIED_DOCS_CHUNKS}.id = chunks_statements.id;")
+        print(update_table_sql)
         self.session.sql(update_table_sql).collect()
 
     def verify_statement(self, statement):
@@ -47,33 +48,21 @@ class VerifyDoc:
         verified = df_response[0].RESPONSE
         return verified
 
-    def cleanup_statements(self, text):
-        start_pos = text.find("[")
-        end_pos = text.find("]")
-        if not start_pos or not end_pos:
-            return '[]'
-        return text[start_pos :end_pos]
-
     def create_chunk_score(self):
         # for each row in the unverified chunk table:
-        # 1. create table with statements from the statements list
-        statements_df = self.session.table(UNVERIFIED_DOCS_CHUNKS)
-        cleanup_udf = udf(self.cleanup_statements, name="cleanup_statements", session=self.session) #TODO: this doesn't work yet
-        statements_df = statements_df.with_column("statements", cleanup_udf(col("statements")))
-        flattened_df = statements_df.with_column("statement", snowpark.functions.flatten(col(["statements"]))).drop(
-            "statements")
-        flattened_df.show()
+        get_statements_sql = f"SELECT * FROM {UNVERIFIED_DOCS_CHUNKS}"
+        statements = self.session.sql(get_statements_sql).collect()
+        for statement in statements:
+            score = self.verify_statement(statement)
+            update_score_sql = (f"update {UNVERIFIED_DOCS_CHUNKS} "
+                                f"SET score = {score} "
+                                f"where id = {statement.id}")
+            self.session.sql(update_score_sql).collect()
+        # 1. get the statements
+        # 2. for each statement, get the score
+        # 3. calculate the average score for the chunk
+        # 4. update the chunk table with the average score
 
-        # 2. for each statement, get the supporting evidence from the verified corpus using the search service
-        verify_udf = udf(self.verify_statement, name="verify_statement", session=self.session)
-        df_with_verified_tag = flattened_df.select(flattened_df["id"],
-                                                   verify_udf(flattened_df["statement"]).alias("verified"))
-        df_with_verified_tag.show()
-        df_with_verified_tag.write.format("snowflake").option("dbtable", "chunks_statements_flattened").mode(
-            "overwrite").save()
-
-        # 4. calculate the overall score for the chunk by doing an average of the scores of the statements
-        # 5. update the chunk table with the score
         print("TODO: implement create_chunk_score")
         return
 
@@ -114,6 +103,12 @@ class VerifyDoc:
         Upload a PDF document to verify its claims against our trusted corpus.
         Documents that pass verification will be added to the corpus.
         """)
+
+        # cleanup unverified stage and table
+        self.session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}").collect()
+        self.session.sql(f"CREATE STAGE IF NOT EXISTS {UNVERIFIED_DOCUMENT_STAGE} FILE_FORMAT = (TYPE='CSV') DIRECTORY = (ENABLE=TRUE) ENCRYPTION=(TYPE='SNOWFLAKE_SSE')")
+        self.session.sql(f"DROP TABLE IF EXISTS {UNVERIFIED_DOCS_CHUNKS}").collect()
+        self.session.sql(f"CREATE TABLE {UNVERIFIED_DOCS_CHUNKS} (id int autoincrement, relative_path string, size int, file_url string, scoped_file_url string, chunk string, statements string, score float)").collect()
 
         uploaded_file = self.st.file_uploader(
             "Upload a PDF to fact-check:",
