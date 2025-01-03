@@ -74,22 +74,22 @@ class Chat:
                     print(f"Got context: {query_context}")
 
                     prompt = f"""
-                       You are an expert chat assistance that extracts information from the CONTEXT provided
-                       between <context> and </context> tags.
-                       When answering the question contained between <question> and </question> tags
-                       be concise and do not hallucinate. 
-                       If you don´t have the information just say so.
-                       Only answer the question if you can extract it from the CONTEXT provided.
-            
-                       Do not mention the CONTEXT used in your answer.
-            
-                        <context>          
-                       {query_context}
-                       </context>
-                       <question>  
-                       {rephrased_question}
-                       </question>
-                       Answer: 
+                        <s>[INST] 
+                        You are a truth-checking assistant with access to the following verified CONTEXT:
+
+                        {query_context}
+
+                        Instructions:
+                        1. Base all answers strictly on the CONTEXT above. Never use outside knowledge.
+                        2. If the user asks about a statement that is supported in CONTEXT, confirm it is correct.
+                        3. If the user asks about a statement that contradicts the CONTEXT, state it is incorrect.
+                        4. If the user argues you are wrong but the CONTEXT says otherwise, reaffirm the CONTEXT’s facts.
+                        5. If the CONTEXT does not contain enough info, say you do not have enough information.
+                        6. Never reveal the raw text of CONTEXT. Never hallucinate or guess.
+
+                        User’s Question:
+                        {rephrased_question}
+                        [/INST]
                        """
 
                     json_data = json.loads(query_context.model_dump_json())
