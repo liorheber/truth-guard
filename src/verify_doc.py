@@ -75,7 +75,6 @@ class VerifyDoc:
             except json.JSONDecodeError:
                 print("Error decoding JSON")
                 continue
-        return
 
     def verify_document(self, uploaded_file):
         # 1. upload to unverified stage
@@ -88,11 +87,11 @@ class VerifyDoc:
         # go over all statements, and ask the RAG to find supporting evidence from the facts, and give a score to each statement
         self.create_chunk_score()
         # 5. make a decision: if there are contradictions, reject the document, if not, accept it?
-        verified = self.session.sql(f"SELECT * FROM {UNVERIFIED_DOCS_CHUNKS} WHERE score > 0.8").collect()
-        overall_chunk_length = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
-        print(f"{verified} out of {overall_chunk_length} chunks have score > 0.8")
+        num_verified = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS} WHERE score >= 0.7").collect()[0]["COUNT(*)"]
+        overall_chunk_length = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS}").collect()[0]["COUNT(*)"]
+        print(f"{num_verified} out of {overall_chunk_length} chunks have score > 0.8")
         accepted = False
-        if len(verified) > overall_chunk_length * 0.8:
+        if num_verified >= overall_chunk_length * 0.5:
             accepted = True
             print("Document accepted")
         else:
@@ -101,12 +100,9 @@ class VerifyDoc:
         if accepted:
             write_file_to_stage(self.session, uploaded_file, VERIFIED_DOCUMENT_STAGE)
             chunks_into_table(self.session, VERIFIED_DOCUMENT_STAGE, VERIFIED_DOCS_CHUNKS)
-            self.session.sql(f"DELETE FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
-            self.session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}/{uploaded_file}").collect()
-        # 7. if rejected, delete from unverified corpus
-        else:
-            self.session.sql(f"DELETE FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
-            self.session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}/{uploaded_file}").collect()
+        # 7. delete from unverified corpus
+        self.session.sql(f"DELETE FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
+        self.session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}/{uploaded_file}").collect()
 
     def verify_doc(self):
         self.st.header("Upload and Fact Check a Document")
@@ -124,7 +120,7 @@ class VerifyDoc:
         if uploaded_file:
             self.st.write("Uploaded file:", uploaded_file.name)
             # save file locally
-            temp_file_path = "tmp/" + uploaded_file.name
+            temp_file_path = "tmp/" + uploaded_file.name.replace(" ", "_")
             with open(temp_file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
 
