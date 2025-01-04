@@ -2,17 +2,17 @@ from snowflake.core import Root
 from snowflake.snowpark import Session
 from src.config import SNOWFLAKE_CONFIG
 
-
 DATABASE = "HISTORICAL_FACTS_DB"
 SCHEMA = "PUBLIC"
 VERIFIED_DOCS_CHUNKS = "VERIFIED_DOCS_CHUNKS"
 VERIFIED_DOCS_SEARCH_SERVICE = "VERIFIED_DOCS_SEARCH_SERVICE"
+UNVERIFIED_DOCS_SEARCH_SERVICE = "UNVERIFIED_DOCS_SEARCH_SERVICE"
 VERIFIED_DOCUMENT_STAGE = "VERIFIED_DOCUMENT_STAGE"
 UNVERIFIED_DOCUMENT_STAGE = "UNVERIFIED_DOCUMENT_STAGE"
 UNVERIFIED_DOCS_CHUNKS = "UNVERIFIED_DOCS_CHUNKS"
 
 
-def get_cortex_search_services(session):
+def get_css(session):
     """Get cortex search function."""
     root = Root(session)
     return root.databases[DATABASE].schemas[SCHEMA].cortex_search_services[VERIFIED_DOCS_SEARCH_SERVICE]
@@ -39,7 +39,7 @@ def init_database(session):
         ENCRYPTION=(TYPE='SNOWFLAKE_SSE')
     """).collect()
 
-    # Create document stage if it doesn't exist
+    # Create unverified document stage if it doesn't exist
     session.sql(f"""
     CREATE STAGE IF NOT EXISTS {UNVERIFIED_DOCUMENT_STAGE}
         FILE_FORMAT = (TYPE='CSV')
@@ -58,7 +58,27 @@ def init_database(session):
     );
     """).collect()
 
-# TODO: maybe we have to think about the check sizes and the overlap, and maybe define another chunker for the unverified documents
+    # Create unverified chunks table
+    session.sql(f"""
+        CREATE TABLE IF NOT EXISTS {UNVERIFIED_DOCS_CHUNKS} (
+            ID NUMBER(38,0) AUTOINCREMENT,
+            RELATIVE_PATH VARCHAR(1000),
+            SIZE NUMBER(38,0),
+            FILE_URL VARCHAR(1000),
+            SCOPED_FILE_URL VARCHAR(1000),
+            CHUNK VARCHAR(16777216),
+            STATEMENTS VARCHAR(16777216)
+        );
+            """).collect()
+
+    # cleanup unverified stage and table - TODO: work only on our file and not delete everything
+    docs = session.sql(f"list @{UNVERIFIED_DOCUMENT_STAGE}").collect()
+    for doc in docs:
+        print(f"Removing {doc.name}")
+        session.sql(f"remove @{doc.name}").collect()
+    session.sql(f"delete from {UNVERIFIED_DOCS_CHUNKS}").collect()
+
+    # TODO: maybe we have to think about the check sizes and the overlap, and maybe define another chunker for the unverified documents
     # Create text chunker for verified documents
     session.sql(f"""
     create or replace function text_chunker(pdf_text string)
@@ -104,18 +124,6 @@ $$;
     );
     """).collect()
 
-    session.sql(f"""
-    CREATE TABLE IF NOT EXISTS {UNVERIFIED_DOCS_CHUNKS} (
-        ID NUMBER(38,0) AUTOINCREMENT,
-        RELATIVE_PATH VARCHAR(1000),
-        SIZE NUMBER(38,0),
-        FILE_URL VARCHAR(1000),
-        SCOPED_FILE_URL VARCHAR(1000),
-        CHUNK VARCHAR(16777216),
-        STATEMENTS VARCHAR(16777216)
-    );
-        """).collect()
-
 
 def verify_cortex_access(session):
     """Verify access to required Cortex functions."""
@@ -124,18 +132,17 @@ def verify_cortex_access(session):
         functions = session.sql("""
         SHOW USER FUNCTIONS IN SCHEMA SNOWFLAKE.CORTEX;
         """).collect()
-        
+
         print("Available Cortex functions:")
         for func in functions:
             print(f"- {func['name']}")
-            
+
         # Test basic function access
         session.sql("""
         SELECT 1;
         """).collect()
-        
+
         return True
     except Exception as e:
         print(f"Error verifying Cortex access: {str(e)}")
         return False
-

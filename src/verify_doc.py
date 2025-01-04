@@ -1,3 +1,4 @@
+import json
 import os
 
 from initial_file_ingestion import upload_file_to_stage, write_file_to_stage, chunks_into_table
@@ -6,10 +7,10 @@ from src.database import *
 
 
 class VerifyDoc:
-    def __init__(self, streamlit, session, svc):
+    def __init__(self, streamlit, session, css):
         self.st = streamlit
         self.session = session
-        self.svc = svc
+        self.css = css
         os.makedirs("tmp/split_files", exist_ok=True)
 
     def create_statements(self):
@@ -35,17 +36,20 @@ class VerifyDoc:
         self.session.sql(update_table_sql).collect()
 
     def verify_statement(self, statement):
-        statement_context = self.svc.search(statement, COLUMNS, limit=NUM_CHUNKS)
+        print(f"Finding context for statement: {statement}")
+        statement_context = self.css.search(statement, COLUMNS, limit=NUM_CHUNKS)
+        print(f"Context for statement: {statement_context}")
         verify_prompt = f"""
             You are an expert chat assistance that verifies statements using the CONTEXT provided.
             If the statement is supported by the context, please answer "verified". If the statement is contradicted by the context, please answer "contradicted".
             If the statement is unrelated to the context, please answer "unverified".
+            Do not add any additional words or context to the answer.
             <statement>{statement}</statement>
             <context>{statement_context}</context>
             """
         cmd = "select snowflake.cortex.complete(?, ?) as response"
         df_response = self.session.sql(cmd, params=['mistral-large', verify_prompt]).collect()
-        verified = df_response[0].RESPONSE
+        verified = df_response[0].RESPONSE.strip()
         return verified
 
     def create_chunk_score(self):
@@ -53,17 +57,24 @@ class VerifyDoc:
         get_statements_sql = f"SELECT * FROM {UNVERIFIED_DOCS_CHUNKS}"
         statements = self.session.sql(get_statements_sql).collect()
         for statement in statements:
-            score = self.verify_statement(statement)
-            update_score_sql = (f"update {UNVERIFIED_DOCS_CHUNKS} "
-                                f"SET score = {score} "
-                                f"where id = {statement.id}")
-            self.session.sql(update_score_sql).collect()
-        # 1. get the statements
-        # 2. for each statement, get the score
-        # 3. calculate the average score for the chunk
-        # 4. update the chunk table with the average score
-
-        print("TODO: implement create_chunk_score")
+            print(f"Statements from LLM: {statement}")
+            try:
+                statements = json.loads(statement["STATEMENTS"])
+                verifications = []
+                print(f"Statements to verify: {statements}")
+                for st in statements:
+                    print(f"Asking LLM regrading statement: {st}")
+                    llm_answer = self.verify_statement(st)
+                    print(f"LLM answer: {llm_answer}")
+                    verifications.append(llm_answer)
+                score = sum([1 if v.lower() == "verified" else 0 for v in verifications]) / len(verifications)
+                update_score_sql = (f"update {UNVERIFIED_DOCS_CHUNKS} "
+                                        f"SET score = {score} "
+                                        f"where id = {statement['ID']}")
+                self.session.sql(update_score_sql).collect()
+            except json.JSONDecodeError:
+                print("Error decoding JSON")
+                continue
         return
 
     def verify_document(self, uploaded_file):
@@ -103,13 +114,6 @@ class VerifyDoc:
         Upload a PDF document to verify its claims against our trusted corpus.
         Documents that pass verification will be added to the corpus.
         """)
-
-        # cleanup unverified stage and table - TODO: work only on our file and not delete everything
-        docs = self.session.sql(f"list @{UNVERIFIED_DOCUMENT_STAGE}").collect()
-        for doc in docs:
-            print(f"Removing {doc.name}")
-            self.session.sql(f"remove @{doc.name}").collect()
-        self.session.sql(f"delete from {UNVERIFIED_DOCS_CHUNKS}").collect()
 
         uploaded_file = self.st.file_uploader(
             "Upload a PDF to fact-check:",
