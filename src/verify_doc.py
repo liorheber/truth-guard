@@ -18,7 +18,7 @@ class VerifyDoc:
                                  "WITH unique_statement AS "
                                  f"(SELECT DISTINCT id, relative_path, chunk FROM {UNVERIFIED_DOCS_CHUNKS}), "
                                  "chunks_statements AS (SELECT id, relative_path, "
-                                 "TRIM(snowflake.cortex.COMPLETE ('llama3-70b', "
+                                 "TRIM(snowflake.cortex.COMPLETE ('mistral-large2', "
                                  "'Return a json formatted list of statements documented in the text. "
                                  "Return only the list with no additional information."
                                  " <text>' || chunk || '</text>'), "
@@ -87,11 +87,11 @@ class VerifyDoc:
         # go over all statements, and ask the RAG to find supporting evidence from the facts, and give a score to each statement
         self.create_chunk_score()
         # 5. make a decision: if there are contradictions, reject the document, if not, accept it?
-        num_verified = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS} WHERE score >= 0.7").collect()[0]["COUNT(*)"]
+        num_verified = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS} WHERE score >= 0.9").collect()[0]["COUNT(*)"]
         overall_chunk_length = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS}").collect()[0]["COUNT(*)"]
-        print(f"{num_verified} out of {overall_chunk_length} chunks have score > 0.8")
+        print(f"{num_verified} out of {overall_chunk_length} chunks have score >= 0.9")
         accepted = False
-        if num_verified >= overall_chunk_length * 0.5:
+        if num_verified == overall_chunk_length:
             accepted = True
             print("Document accepted")
         else:
