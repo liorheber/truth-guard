@@ -18,7 +18,7 @@ class VerifyDoc:
                                  "WITH unique_statement AS "
                                  f"(SELECT DISTINCT id, relative_path, chunk FROM {UNVERIFIED_DOCS_CHUNKS}), "
                                  "chunks_statements AS (SELECT id, relative_path, "
-                                 "TRIM(snowflake.cortex.COMPLETE ('mistral-large', "
+                                 "TRIM(snowflake.cortex.COMPLETE ('mistral-large2', "
                                  "'Return a json formatted list of statements documented in the text. "
                                  "Return only the list with no additional information."
                                  " <text>' || chunk || '</text>'), "
