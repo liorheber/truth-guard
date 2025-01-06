@@ -1,5 +1,5 @@
-from snowflake import snowpark
-from snowflake.snowpark.functions import udf, col
+import json
+import os
 
 from initial_file_ingestion import upload_file_to_stage, write_file_to_stage, chunks_into_table
 from src.chat import NUM_CHUNKS, COLUMNS
@@ -7,16 +7,17 @@ from src.database import *
 
 
 class VerifyDoc:
-    def __init__(self, streamlit, session, svc):
+    def __init__(self, streamlit, session, css):
         self.st = streamlit
         self.session = session
-        self.svc = svc
+        self.css = css
+        os.makedirs("tmp/split_files", exist_ok=True)
 
     def create_statements(self):
         create_statements_sql = ("CREATE OR REPLACE TEMPORARY TABLE chunks_statements AS "
                                  "WITH unique_statement AS "
-                                 f"(SELECT DISTINCT relative_path, chunk FROM {UNVERIFIED_DOCS_CHUNKS}), "
-                                 "chunks_statements AS (SELECT relative_path, "
+                                 f"(SELECT DISTINCT id, relative_path, chunk FROM {UNVERIFIED_DOCS_CHUNKS}), "
+                                 "chunks_statements AS (SELECT id, relative_path, "
                                  "TRIM(snowflake.cortex.COMPLETE ('llama3-70b', "
                                  "'Return a json formatted list of statements documented in the text. "
                                  "Return only the list with no additional information."
@@ -30,52 +31,50 @@ class VerifyDoc:
         update_table_sql = (f"update {UNVERIFIED_DOCS_CHUNKS}  "
                             f"SET statements = chunks_statements.statements "
                             f"from chunks_statements "
-                            f"where  {UNVERIFIED_DOCS_CHUNKS}.relative_path = chunks_statements.relative_path;")
+                            f"where  {UNVERIFIED_DOCS_CHUNKS}.id = chunks_statements.id;")
+        print(update_table_sql)
         self.session.sql(update_table_sql).collect()
 
     def verify_statement(self, statement):
-        statement_context = self.svc.search(statement, COLUMNS, limit=NUM_CHUNKS)
+        print(f"Finding context for statement: {statement}")
+        statement_context = self.css.search(statement, COLUMNS, limit=NUM_CHUNKS)
+        print(f"Context for statement: {statement_context}")
         verify_prompt = f"""
             You are an expert chat assistance that verifies statements using the CONTEXT provided.
             If the statement is supported by the context, please answer "verified". If the statement is contradicted by the context, please answer "contradicted".
             If the statement is unrelated to the context, please answer "unverified".
+            Do not add any additional words or context to the answer.
             <statement>{statement}</statement>
             <context>{statement_context}</context>
             """
         cmd = "select snowflake.cortex.complete(?, ?) as response"
         df_response = self.session.sql(cmd, params=['mistral-large', verify_prompt]).collect()
-        verified = df_response[0].RESPONSE
+        verified = df_response[0].RESPONSE.strip()
         return verified
-
-    def cleanup_statements(self, text):
-        start_pos = text.find("[")
-        end_pos = text.find("]")
-        if not start_pos or not end_pos:
-            return '[]'
-        return text[start_pos :end_pos]
 
     def create_chunk_score(self):
         # for each row in the unverified chunk table:
-        # 1. create table with statements from the statements list
-        statements_df = self.session.table(UNVERIFIED_DOCS_CHUNKS)
-        cleanup_udf = udf(self.cleanup_statements, name="cleanup_statements", session=self.session) #TODO: this doesn't work yet
-        statements_df = statements_df.with_column("statements", cleanup_udf(col("statements")))
-        flattened_df = statements_df.with_column("statement", snowpark.functions.flatten(col(["statements"]))).drop(
-            "statements")
-        flattened_df.show()
-
-        # 2. for each statement, get the supporting evidence from the verified corpus using the search service
-        verify_udf = udf(self.verify_statement, name="verify_statement", session=self.session)
-        df_with_verified_tag = flattened_df.select(flattened_df["id"],
-                                                   verify_udf(flattened_df["statement"]).alias("verified"))
-        df_with_verified_tag.show()
-        df_with_verified_tag.write.format("snowflake").option("dbtable", "chunks_statements_flattened").mode(
-            "overwrite").save()
-
-        # 4. calculate the overall score for the chunk by doing an average of the scores of the statements
-        # 5. update the chunk table with the score
-        print("TODO: implement create_chunk_score")
-        return
+        get_statements_sql = f"SELECT * FROM {UNVERIFIED_DOCS_CHUNKS}"
+        statements = self.session.sql(get_statements_sql).collect()
+        for statement in statements:
+            print(f"Statements from LLM: {statement}")
+            try:
+                statements = json.loads(statement["STATEMENTS"])
+                verifications = []
+                print(f"Statements to verify: {statements}")
+                for st in statements:
+                    print(f"Asking LLM regrading statement: {st}")
+                    llm_answer = self.verify_statement(st)
+                    print(f"LLM answer: {llm_answer}")
+                    verifications.append(llm_answer)
+                score = sum([1 if v.lower() == "verified" else 0 for v in verifications]) / len(verifications)
+                update_score_sql = (f"update {UNVERIFIED_DOCS_CHUNKS} "
+                                        f"SET score = {score} "
+                                        f"where id = {statement['ID']}")
+                self.session.sql(update_score_sql).collect()
+            except json.JSONDecodeError:
+                print("Error decoding JSON")
+                continue
 
     def verify_document(self, uploaded_file):
         # 1. upload to unverified stage
@@ -88,11 +87,11 @@ class VerifyDoc:
         # go over all statements, and ask the RAG to find supporting evidence from the facts, and give a score to each statement
         self.create_chunk_score()
         # 5. make a decision: if there are contradictions, reject the document, if not, accept it?
-        verified = self.session.sql(f"SELECT * FROM {UNVERIFIED_DOCS_CHUNKS} WHERE score > 0.8").collect()
-        overall_chunk_length = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
-        print(f"{verified} out of {overall_chunk_length} chunks have score > 0.8")
+        num_verified = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS} WHERE score >= 0.7").collect()[0]["COUNT(*)"]
+        overall_chunk_length = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS}").collect()[0]["COUNT(*)"]
+        print(f"{num_verified} out of {overall_chunk_length} chunks have score > 0.8")
         accepted = False
-        if len(verified) > overall_chunk_length * 0.8:
+        if num_verified >= overall_chunk_length * 0.5:
             accepted = True
             print("Document accepted")
         else:
@@ -101,12 +100,9 @@ class VerifyDoc:
         if accepted:
             write_file_to_stage(self.session, uploaded_file, VERIFIED_DOCUMENT_STAGE)
             chunks_into_table(self.session, VERIFIED_DOCUMENT_STAGE, VERIFIED_DOCS_CHUNKS)
-            self.session.sql(f"DELETE FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
-            self.session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}/{uploaded_file}").collect()
-        # 7. if rejected, delete from unverified corpus
-        else:
-            self.session.sql(f"DELETE FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
-            self.session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}/{uploaded_file}").collect()
+        # 7. delete from unverified corpus
+        self.session.sql(f"DELETE FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
+        self.session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}/{uploaded_file}").collect()
 
     def verify_doc(self):
         self.st.header("Upload and Fact Check a Document")
@@ -124,7 +120,7 @@ class VerifyDoc:
         if uploaded_file:
             self.st.write("Uploaded file:", uploaded_file.name)
             # save file locally
-            temp_file_path = "tmp/" + uploaded_file.name
+            temp_file_path = "tmp/" + uploaded_file.name.replace(" ", "_")
             with open(temp_file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
 
