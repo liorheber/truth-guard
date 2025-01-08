@@ -78,9 +78,14 @@ class VerifyDoc:
 
     def verify_document(self, uploaded_file):
         # 1. upload to unverified stage
-        upload_file_to_stage(self.session, uploaded_file, UNVERIFIED_DOCUMENT_STAGE)
+        uploaded_files = upload_file_to_stage(self.session, uploaded_file, UNVERIFIED_DOCUMENT_STAGE)
+        if not uploaded_files or len(uploaded_files) == 0:
+            self.st.error("Error: Unable to upload the document")
+            return
         # 2. chunk the document into an unverified table
-        chunks_into_table(self.session, UNVERIFIED_DOCUMENT_STAGE, UNVERIFIED_DOCS_CHUNKS)
+        if not chunks_into_table(self.session, UNVERIFIED_DOCUMENT_STAGE, UNVERIFIED_DOCS_CHUNKS):
+            self.st.error("Error: Unable to chunk the document")
+            return
         # 3. use cortex functions to create statements from each chunk
         self.create_statements()
         # 4. compare statements to verified corpus
@@ -93,16 +98,22 @@ class VerifyDoc:
         accepted = False
         if num_verified == overall_chunk_length:
             accepted = True
-            print("Document accepted")
+            self.st.markdown("## Document accepted and added to verified corpus 🎉")
         else:
-            print("Document rejected")
+            self.st.markdown("## Document rejected 😔")
         # 6. if accepted, move to verified corpus, chunk and add to verified corpus, then delete from unverified corpus
         if accepted:
+            print("Accepted document")
             write_file_to_stage(self.session, uploaded_file, VERIFIED_DOCUMENT_STAGE)
             chunks_into_table(self.session, VERIFIED_DOCUMENT_STAGE, VERIFIED_DOCS_CHUNKS)
         # 7. delete from unverified corpus
         self.session.sql(f"DELETE FROM {UNVERIFIED_DOCS_CHUNKS}").collect()
         self.session.sql(f"REMOVE @{UNVERIFIED_DOCUMENT_STAGE}/{uploaded_file}").collect()
+        self.cleanup(uploaded_file)
+
+    def cleanup(self, uploaded_file):
+        os.remove(uploaded_file)
+        self.st.rerun()
 
     def verify_doc(self):
         self.st.header("Upload and Fact Check a Document")

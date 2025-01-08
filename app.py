@@ -12,7 +12,9 @@ def init_snowflake():
     if not verify_cortex_access(se):
         st.error("Error: Unable to access required Cortex functions")
         st.stop()
-    init_database(se)
+    if not init_database(se):
+        st.error("Error: Unable to initialize the database")
+        st.stop()
     return se
 
 
