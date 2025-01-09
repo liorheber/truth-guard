@@ -99,8 +99,8 @@ class text_chunker:
     def process(self, pdf_text: str):
         
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size = 1512, #Adjust this as you see fit
-            chunk_overlap  = 256, #This let's text have some form of overlap. Useful for keeping chunks contextual
+            chunk_size = 1024,
+            chunk_overlap  = 124, 
             length_function = len
         )
     
