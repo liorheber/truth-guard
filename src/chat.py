@@ -62,7 +62,7 @@ class Chat:
                         cmd = """
                            select snowflake.cortex.complete(?, ?) as response
                         """
-                        df_response = self.session.sql(cmd, params=['mistral-large', rephrase_prompt]).collect()
+                        df_response = self.session.sql(cmd, params=['mistral-large2', rephrase_prompt]).collect()
                         rephrased_question = df_response[0].RESPONSE
                         print(f"Rephrased question: {rephrased_question}")
                     else:
@@ -101,7 +101,7 @@ class Chat:
                        select snowflake.cortex.complete(?, ?) as response
                     """
 
-                    df_response = self.session.sql(cmd, params=['mistral-large', prompt]).collect()
+                    df_response = self.session.sql(cmd, params=['mistral-large2', prompt]).collect()
 
                     # Update related documents
                     self.st.session_state.related_documents = []

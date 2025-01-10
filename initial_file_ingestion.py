@@ -1,4 +1,6 @@
 import os
+import time
+from typing import List
 
 from PyPDF2 import PdfReader, PdfWriter
 from src.database import *
@@ -61,25 +63,67 @@ def upload_file_to_stage(session, file: str, stage: str):
     return uploaded_files
 
 
-def chunks_into_table(session, stage: str, table: str):
-    print(f"inserting chunks from {stage}")
-    chunking_sql = (f"insert into {table}"
-                    f" (relative_path, size, file_url, scoped_file_url, chunk) "
-                    f"select relative_path, size, file_url, "
-                    f"build_scoped_file_url(@{stage}, relative_path) as scoped_file_url,  "
-                    f"func.chunk as chunk "
-                    f"from directory(@{stage}),  "
-                    f"TABLE("
-                    f"text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@{stage},  "
-                    f"relative_path, ") + "{'mode': 'LAYOUT'})))) as func;"
-    print(chunking_sql)
-    results = session.sql(chunking_sql).collect()
-    print(results)
-    if results[0][0] == 0:
-        print("No chunks inserted")
+def verify_files_in_stage(session, stage: str) -> bool:
+    """Verify that files are available in the stage"""
+    try:
+        results = session.sql(f"LIST @{stage}").collect()
+        return len(results) > 0
+    except Exception as e:
+        print(f"Error verifying files in stage: {e}")
         return False
-    print("chunks inserted")
-    return True
+
+
+def chunks_into_table(session, stage: str, table: str, max_retries: int = 5, retry_delay: int = 10):
+    """Insert chunks into table with retry mechanism"""
+    print(f"inserting chunks from {stage}")
+    
+    for attempt in range(max_retries):
+        if not verify_files_in_stage(session, stage):
+            print(f"Files not yet available in stage. Attempt {attempt + 1}/{max_retries}")
+            time.sleep(retry_delay)
+            continue
+
+        chunking_sql = (f"insert into {table}"
+                      f" (relative_path, size, file_url, scoped_file_url, chunk) "
+                      f"select relative_path, size, file_url, "
+                      f"build_scoped_file_url(@{stage}, relative_path) as scoped_file_url,  "
+                      f"t.chunk as chunk "
+                      f"from directory(@{stage}),  "
+                      f"TABLE(text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@{stage},  "
+                      f"relative_path, {{'mode': 'LAYOUT'}})))) as t")
+        
+        print("Executing query:")
+        print(chunking_sql)
+        
+        try:
+            results = session.sql(chunking_sql).collect()
+            print("Query results:", results)
+            
+            if results and results[0] and results[0][0] > 0:
+                print(f"Successfully inserted {results[0][0]} chunks")
+                return True
+                
+            print(f"No chunks inserted. Attempt {attempt + 1}/{max_retries}")
+            
+        except Exception as e:
+            print(f"Error executing query on attempt {attempt + 1}: {str(e)}")
+            
+        time.sleep(retry_delay)
+    
+    print("Failed to insert chunks after all retries")
+    return False
+
+
+def refresh_stage(session, stage: str):
+    """Refresh the stage metadata to ensure uploaded files are visible"""
+    print(f"Refreshing stage {stage}")
+    try:
+        session.sql(f"ALTER STAGE {stage} REFRESH").collect()
+        print("Stage refresh completed")
+        return True
+    except Exception as e:
+        print(f"Error refreshing stage: {str(e)}")
+        return False
 
 
 if __name__ == "__main__":
@@ -92,4 +136,6 @@ if __name__ == "__main__":
         file_path = os.path.join(documents_dir_path, file_name)
         upload_file_to_stage(cur_session, file_path, VERIFIED_DOCUMENT_STAGE)
 
+    # Refresh the stage before processing chunks
+    refresh_stage(cur_session, VERIFIED_DOCUMENT_STAGE)
     chunks_into_table(cur_session, VERIFIED_DOCUMENT_STAGE, VERIFIED_DOCS_CHUNKS)
