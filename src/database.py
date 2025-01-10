@@ -25,30 +25,31 @@ def create_snowflake_session():
 
 def init_database(session):
     """Initialize the database, schema, and required tables."""
+    statuses = []
     # Create database and schema
-    session.sql(f"CREATE DATABASE IF NOT EXISTS {DATABASE}").collect()
-    session.sql(f"USE DATABASE {DATABASE}").collect()
-    session.sql(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}").collect()
-    session.sql(f"USE SCHEMA {SCHEMA}").collect()
+    statuses.append(session.sql(f"CREATE DATABASE IF NOT EXISTS {DATABASE}").collect())
+    statuses.append(session.sql(f"USE DATABASE {DATABASE}").collect())
+    statuses.append(session.sql(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}").collect())
+    statuses.append(session.sql(f"USE SCHEMA {SCHEMA}").collect())
 
     # Create document stage if it doesn't exist
-    session.sql(f"""
+    statuses.append(session.sql(f"""
     CREATE STAGE IF NOT EXISTS {VERIFIED_DOCUMENT_STAGE}
         FILE_FORMAT = (TYPE='CSV')
         DIRECTORY = (ENABLE=TRUE)
         ENCRYPTION=(TYPE='SNOWFLAKE_SSE')
-    """).collect()
+    """).collect())
 
     # Create unverified document stage if it doesn't exist
-    session.sql(f"""
+    statuses.append(session.sql(f"""
     CREATE STAGE IF NOT EXISTS {UNVERIFIED_DOCUMENT_STAGE}
         FILE_FORMAT = (TYPE='CSV')
         DIRECTORY = (ENABLE=TRUE)
         ENCRYPTION=(TYPE='SNOWFLAKE_SSE')
-    """).collect()
+    """).collect())
 
     # Create verified chunks table
-    session.sql(f"""
+    statuses.append(session.sql(f"""
     CREATE TABLE IF NOT EXISTS {VERIFIED_DOCS_CHUNKS} ( 
         RELATIVE_PATH VARCHAR(1000),
         SIZE NUMBER(38,0),
@@ -56,10 +57,10 @@ def init_database(session):
         SCOPED_FILE_URL VARCHAR(1000),
         CHUNK VARCHAR(16777216)
     );
-    """).collect()
+    """).collect())
 
     # Create unverified chunks table
-    session.sql(f"""
+    statuses.append(session.sql(f"""
         CREATE TABLE IF NOT EXISTS {UNVERIFIED_DOCS_CHUNKS} (
             ID NUMBER(38,0) AUTOINCREMENT,
             RELATIVE_PATH VARCHAR(1000),
@@ -69,7 +70,7 @@ def init_database(session):
             CHUNK VARCHAR(16777216),
             STATEMENTS VARCHAR(16777216)
         );
-            """).collect()
+            """).collect())
 
     # cleanup unverified stage and table - TODO: work only on our file and not delete everything
     docs = session.sql(f"list @{UNVERIFIED_DOCUMENT_STAGE}").collect()
@@ -80,7 +81,7 @@ def init_database(session):
 
     # TODO: maybe we have to think about the check sizes and the overlap, and maybe define another chunker for the unverified documents
     # Create text chunker for verified documents
-    session.sql(f"""
+    statuses.append(session.sql(f"""
     create or replace function text_chunker(pdf_text string)
 returns table (chunk varchar)
 language python
@@ -98,8 +99,8 @@ class text_chunker:
     def process(self, pdf_text: str):
         
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size = 1512, #Adjust this as you see fit
-            chunk_overlap  = 256, #This let's text have some form of overlap. Useful for keeping chunks contextual
+            chunk_size = 1024,
+            chunk_overlap  = 124, 
             length_function = len
         )
     
@@ -108,10 +109,10 @@ class text_chunker:
         
         yield from df.itertuples(index=False, name=None)
 $$;
-    """).collect()
+    """).collect())
 
     # Create cortex search for verified chunks table
-    session.sql(f"""
+    statuses.append(session.sql(f"""
     CREATE CORTEX SEARCH SERVICE IF NOT EXISTS {VERIFIED_DOCS_SEARCH_SERVICE}
     ON CHUNK
     WAREHOUSE = COMPUTE_WH
@@ -122,7 +123,9 @@ $$;
             FILE_URL
         FROM {VERIFIED_DOCS_CHUNKS}
     );
-    """).collect()
+    """).collect())
+    print(statuses)
+    return all([all(["successfully" in stat['status'] or "succeeded" in stat["status"] for stat in status]) for status in statuses])
 
 
 def verify_cortex_access(session):

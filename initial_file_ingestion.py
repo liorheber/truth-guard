@@ -10,14 +10,20 @@ split_files_dir_path = os.path.join(os.path.dirname(__file__), "tmp", "split_fil
 
 def init_connection_and_db():
     session = create_snowflake_session()
-    init_database(session)
-    return session
+    if init_database(session):
+        return session
+    else:
+        raise Exception("Error: Unable to access required Cortex functions")
 
 
 def write_file_to_stage(session, file: str, stage: str):
     print(f"uploading {file} to @{stage}")
-    session.sql(f"PUT file://{file} @{stage} auto_compress=FALSE OVERWRITE=TRUE").collect()
+    res = session.sql(f"PUT file://{file} @{stage} auto_compress=FALSE OVERWRITE=TRUE").collect()
+    if not all([r["status"] == "UPLOADED" for r in res]):
+        raise Exception(f"Error: Unable to upload {file} to @{stage}")
     print(f"{file} uploaded")
+    print(res)
+    return res
 
 
 def write_page_range_to_stage(session, reader: PdfReader, split_file_name: str, stage: str, page_range: range):
@@ -27,8 +33,10 @@ def write_page_range_to_stage(session, reader: PdfReader, split_file_name: str, 
             writer.add_page(page)
     with open(split_file_name, 'wb') as out:
         writer.write(out)
-    write_file_to_stage(session, split_file_name, stage)
+    res = write_file_to_stage(session, split_file_name, stage)
+    print(res)
     os.remove(split_file_name)
+    return True
 
 
 def chunk_and_upload_file(session, file: str, stage: str, chunk_size: int):
@@ -36,20 +44,25 @@ def chunk_and_upload_file(session, file: str, stage: str, chunk_size: int):
     pages = (0, chunk_size)
     pages_in_file = len(reader.pages)
     split_file_path = os.path.join(split_files_dir_path, os.path.basename(file)).replace(" ", "_")
+    uploaded_files = []
     while pages[0] < pages_in_file:
         split_file_name = f'{split_file_path.replace(".pdf", "")}_page_{pages[0]}-{pages[1]}.pdf'
         page_range = range(pages[0], pages[1])
         write_page_range_to_stage(session, reader, split_file_name, stage, page_range)
+        uploaded_files.append(split_file_name)
         pages = (pages[1], pages[1] + chunk_size)
+    return uploaded_files
 
 
 def upload_file_to_stage(session, file: str, stage: str):
     print(f"start processing {file}")
-    chunk_and_upload_file(session, file, stage, chunk_page_size)
+    uploaded_files = chunk_and_upload_file(session, file, stage, chunk_page_size)
     print(f"{file} processed")
+    return uploaded_files
 
 
-def chunks_into_table(session, stage: str, table:str):
+def chunks_into_table(session, stage: str, table: str):
+    print(f"inserting chunks from {stage}")
     chunking_sql = (f"insert into {table}"
                     f" (relative_path, size, file_url, scoped_file_url, chunk) "
                     f"select relative_path, size, file_url, "
@@ -60,8 +73,13 @@ def chunks_into_table(session, stage: str, table:str):
                     f"text_chunker (TO_VARCHAR(SNOWFLAKE.CORTEX.PARSE_DOCUMENT(@{stage},  "
                     f"relative_path, ") + "{'mode': 'LAYOUT'})))) as func;"
     print(chunking_sql)
-    session.sql(chunking_sql).collect()
+    results = session.sql(chunking_sql).collect()
+    print(results)
+    if results[0][0] == 0:
+        print("No chunks inserted")
+        return False
     print("chunks inserted")
+    return True
 
 
 if __name__ == "__main__":
