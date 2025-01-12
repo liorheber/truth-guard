@@ -1,0 +1,4 @@
+{
+  "verified_chunk_threshold": 0.7,
+  "verified_chunks_percent_per_document": 0.7
+}

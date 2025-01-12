@@ -1,3 +1,5 @@
+import json
+
 import streamlit as st
 
 from src.chat import Chat
@@ -17,6 +19,7 @@ def init_snowflake():
         st.stop()
     return se
 
+config = json.load(open("config.json"))
 
 # Page config
 st.set_page_config(
@@ -45,7 +48,7 @@ with st.sidebar:
 
 # Main content
 if page == "📄 Add & Verify Document":
-    VerifyDoc(st, session, css_verified).verify_doc()
+    VerifyDoc(st, session, css_verified, config).verify_doc()
 
 else:  # Ask a Question
     Chat(st, session, css_verified).chat()

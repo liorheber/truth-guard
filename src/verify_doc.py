@@ -8,10 +8,11 @@ from src.database import *
 
 
 class VerifyDoc:
-    def __init__(self, streamlit, session, css):
+    def __init__(self, streamlit, session, css, config):
         self.st = streamlit
         self.session = session
         self.css = css
+        self.config = config
         os.makedirs("tmp/split_files", exist_ok=True)
 
     def create_statements(self):
@@ -339,9 +340,12 @@ class VerifyDoc:
                 
             # 5. make decision
             status.update(label="Making final verification decision...")
-            num_verified = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS} WHERE score >= 0.9").collect()[0]["COUNT(*)"]
-            overall_chunk_length = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS}").collect()[0]["COUNT(*)"]
-            
+            num_verified = self.session.sql(
+                f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS} WHERE score >= {self.config['verified_chunk_threshold']}").collect()[
+                0]["COUNT(*)"]
+            overall_chunk_length = self.session.sql(f"SELECT COUNT(*) FROM {UNVERIFIED_DOCS_CHUNKS}").collect()[0][
+                "COUNT(*)"]
+
             verification_stats = f"{num_verified} out of {overall_chunk_length} chunks verified"
             verification_percentage = (num_verified / overall_chunk_length) * 100 if overall_chunk_length > 0 else 0
             
@@ -350,8 +354,8 @@ class VerifyDoc:
                 "percentage": verification_percentage,
                 "stats": verification_stats
             }
-            
-            accepted = num_verified == overall_chunk_length
+
+            accepted = num_verified >= overall_chunk_length * self.config['verified_chunks_percent_per_document']
             if accepted:
                 status.update(label="Document accepted! Adding to verified corpus...", state="complete")
                 self.st.session_state.verification_status = "accepted"
